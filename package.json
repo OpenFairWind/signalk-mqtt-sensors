@@ -1,15 +1,24 @@
 {
   "name": "signalk-mqtt-sensors",
   "version": "1.0.0",
+  "description": "",
+  "homepage": "",
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "description": "",
+  "keywords": [
+    "signalk-node-server-plugin",
+    "signalk-category-utility"
+  ],
+  "author": {
+    "name": "Ryan Gregg",
+    "email": "ryan@ryangregg.com"
+  },
+  "license": "Apache-2.0",
   "dependencies": {
+    "js-yaml": "^4.1.0",
+    "jsonpath": "^1.1.1",
     "mqtt": "^5.10.2"
   }
 }

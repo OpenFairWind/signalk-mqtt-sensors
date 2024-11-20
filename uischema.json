@@ -1,0 +1,41 @@
+{
+    "mqtt_server": {
+        "ui:widget": "textarea",
+        "ui:options": {
+            "cols": 40,
+            "rows": 1
+        }
+    },
+    "mqtt_password": {
+        "ui:widget": "password"
+    },
+    "from": {
+        "items": {
+            "mqtt_topic": {
+                "ui:widget": "textarea",
+                "ui:options": {
+                    "rows": 1,
+                    "cols": 40
+                }
+            },
+            "sensors": {
+                "items": {
+                    "json_path": {
+                        "ui:widget": "textarea",
+                        "ui:options": {
+                            "rows": 1,
+                            "cols": 40
+                        }
+                    },
+                    "destination": {
+                        "ui:widget": "textarea",
+                        "ui:options": {
+                            "rows": 1,
+                            "cols": 50
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

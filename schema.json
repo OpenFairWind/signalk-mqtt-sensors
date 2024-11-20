@@ -1,0 +1,107 @@
+{
+    "type": "object",
+    "title": "MQTT Configuration",
+    "description": "Configure the options for requesting and reporting data from the Sailor Hat board.",
+    "properties": {
+        "enabled": {
+            "title": "Enable connection to MQTT server",
+            "type": "boolean",
+            "default": false
+        },
+        "mqtt_server": {
+            "title": "MQTT server URL",
+            "description": "Use mqtt:// or mqtts:// for SSL connections",
+            "type": "string",
+            "default": "mqtt://192.168.8.1"
+        },
+        "mqtt_username": {
+            "title": "MQTT server username",
+            "type": "string"
+        },
+        "mqtt_password": {
+            "title": "MQTT server password",
+            "type": "string"
+        },
+        "from": {
+            "type": "array",
+            "title": "Define Sensors",
+            "description": "Define MQTT topics and the associated sensors for each topic.",
+            "items": {
+                "type": "object",
+                "title": "MQTT Sensor Configuration",
+                "properties": {
+                    "mqtt_topic": {
+                        "type": "string",
+                        "title": "MQTT Topic",
+                        "description": "The MQTT topic to listen on for updates, (e.g. zigbee2mqtt/sensor-name)"
+                    },
+                    "sensors": {
+                        "type": "array",
+                        "title": "Sensors",
+                        "description": "Define one or more sensors for this MQTT topic.",
+                        "items": {
+                            "type": "object",
+                            "title": "Sensor Configuration",
+                            "properties": {
+                                "json_path": {
+                                    "type": "string",
+                                    "title": "JSON Path",
+                                    "description": "JSON Path to the sensor value in the MQTT message payload.",
+                                    "default": "$.device_temperature"
+                                },
+                                "destination": {
+                                    "type": "string",
+                                    "title": "Signal K Destination",
+                                    "description": "The Signal K path where the value should be published.",
+                                    "default": "environment.inside.cabin.temperature"
+                                },
+                                "sensor": {
+                                    "type": "string",
+                                    "title": "Sensor Type",
+                                    "description": "Type of sensor (e.g., temperature, humidity, etc.).",
+                                    "enum": [
+                                        "temperature",
+                                        "humidity",
+                                        "battery",
+                                        "water_leak",
+                                        "pressure",
+                                        "other"
+                                    ],
+                                    "default": "temperature"
+                                },
+                                "unit": {
+                                    "type": "string",
+                                    "title": "Unit",
+                                    "description": "Unit of the sensor value (e.g., C, %, ratio, boolean).",
+                                    "enum": [
+                                        "C",
+                                        "F",
+                                        "K",
+                                        "percent",
+                                        "ratio",
+                                        "boolean",
+                                        "string",
+                                        "Pa",
+                                        "hPa",
+                                        "mmHg",
+                                        "literal"
+                                    ],
+                                    "default": "C"
+                                }
+                            },
+                            "required": [
+                                "destination",
+                                "sensor",
+                                "unit"
+                            ]
+                        }
+                    }
+                },
+                "required": [
+                    "mqtt_topic",
+                    "sensors"
+                ]
+            }
+        }
+    }
+}
