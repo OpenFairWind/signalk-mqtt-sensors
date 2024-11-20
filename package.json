@@ -1,8 +1,7 @@
 {
   "name": "signalk-mqtt-sensors",
   "version": "1.0.0",
-  "description": "",
-  "homepage": "",
+  "description": "Signal K Node Server Plugin that enables data from an MQTT host to be published to Signal K under a configurable set of paths.",
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
@@ -20,5 +19,13 @@
     "js-yaml": "^4.1.0",
     "jsonpath": "^1.1.1",
     "mqtt": "^5.10.2"
+  },
+  "bugs": {
+    "url": "https://github.com/rgregg/signalk-mqtt-sensors/issues"
+  },
+  "homepage": "https://github.com/rgregg/signalk-mqtt-sensors#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/rgregg/signalk-mqtt-sensors.git"
   }
 }
