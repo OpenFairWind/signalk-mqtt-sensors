@@ -102,6 +102,28 @@
                     "sensors"
                 ]
             }
+        },
+        "to": {
+            "type": "array",
+            "title": "Export paths to MQTT",
+            "description": "Export to MQTT.",
+            "items": {
+                "type": "object",
+                "title": "Output Configuration",
+                "properties": {
+                    "signalk_path": {
+                        "type": "string",
+                        "title": "SignalK Path",
+                        "description": "The path to data in SignalK to monitor."
+                    },
+                    "mqtt_topic": {
+                        "type": "string",
+                        "title": "MQTT Topic",
+                        "description": "The MQTT topic that will receive the updates when data changes"
+                    }
+                    
+                }
+            }
         }
     }
 }

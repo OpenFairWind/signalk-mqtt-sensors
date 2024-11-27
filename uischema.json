@@ -19,6 +19,10 @@
                 }
             },
             "sensors": {
+                "ui:field": "collapsable",
+                "ui:options": {
+                    "collapsed": true
+                },
                 "items": {
                     "json_path": {
                         "ui:widget": "textarea",
@@ -34,6 +38,24 @@
                             "cols": 50
                         }
                     }
+                }
+            }
+        }
+    },
+    "to":{
+        "items": {
+            "signalk_path": {
+                "ui:widget": "textarea",
+                "ui:options": {
+                    "rows": 1,
+                    "cols": 40
+                }
+            },
+            "mqtt_topic": {
+                "ui:widget": "textarea",
+                "ui:options": {
+                    "rows": 1,
+                    "cols": 40
                 }
             }
         }

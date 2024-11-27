@@ -36,6 +36,7 @@ module.exports = function(app) {
         console.log(`Staring ${app_name}`);
         
         const fromTopics = loadFromTopics(options);
+        const toTopics = loadToTopics(options);
 
         app.debug("Updating server with SignalK metadata units");
         publishDataTypesToServer(app, fromTopics);
@@ -45,7 +46,48 @@ module.exports = function(app) {
                 
         if (options.enabled)
         {
-            connectToMqttServer(options, fromTopics);
+            app.debug("Connecting to MQTT server...");
+            const mqttConnection = connectToMqttServer(options, fromTopics);
+
+            app.debug("Connecting to SignalK deltas...");
+            subscribeToDeltas(app, toTopics, mqttConnection);
+        }
+
+        function subscribeToDeltas(app, toTopics,  mqttClient) {
+
+            toTopics.forEach(item => {
+                const path = item.signalk_path;
+                app.streambundle.getSelfStream(path).onValue(value => {
+                    app.debug(`Delta received for ${path}:`, value);
+                    publishDeltaToMqtt(mqttClient, path, value, item.mqtt_topic);
+                })
+                
+                // Publish the current value to MQTT when starting
+                const value = app.getSelfPath(path);
+                if (value !== undefined) {
+                    publishDeltaToMqtt(mqttClient, path, value, item.mqtt_topic);
+                }
+            })
+        }
+
+        function publishDeltaToMqtt(mqttClient, path, value, topic) {
+            if (!mqttClient) {
+                app.debug("MQTT client is not connected, cannot publish.");
+                return;
+            }
+        
+            const payload = JSON.stringify({
+                path: path,
+                value: value
+            });
+        
+            mqttClient.publish(topic, payload, { qos: 1 }, (err) => {
+                if (err) {
+                    app.debug(`Error publishing to topic ${topic}:`, err.message);
+                } else {
+                    app.debug(`Published to topic ${topic}: ${payload}`);
+                }
+            });
         }
 
         function connectToMqttServer(options, fromTopics) {
@@ -117,6 +159,8 @@ module.exports = function(app) {
                     app.handleMessage(plugin.id, data);
                 }
             });
+
+            return mqttClient;
         }
 
         function getTopic(fromTopics, search) {
@@ -339,6 +383,19 @@ module.exports = function(app) {
          */
 
             return from;
+        }
+
+        function loadToTopics(options) {
+            const to = options.to;
+            if (!Array.isArray(to)) {
+                return [];
+            }
+
+            app.debug("Loading export sensors...");
+            to.forEach( (topic, index) => {
+                app.debug(`Export: Path: ${topic.signalk_path} to Topic: ${topic.mqtt_topic}`);
+            });
+            return to;
         }
     }
 
