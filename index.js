@@ -1,5 +1,6 @@
 /*
- * Copyright 2024 Ryan Gregg (ryan@ryangregg.com)
+ * Copyright 2024 Ryan Gregg (ryan@ryangregg.com).
+ * Licensed under Apache 2 license. See LICENSE for more information.
  */
 
 const app_name = "signalk-mqtt-sensors";
@@ -57,7 +58,7 @@ module.exports = function(app) {
 
         function subscribeToDeltas(app, toTopics,  mqttClient) {
             const lastPublishedTimestamps = new Map(); // Store the last published timestamps for each path
-            const rateLimitSeconds = typeof toTopics.min_publish_interval === 'number' ? toTopics.min_publish_interval : 0;
+            const rateLimit = (typeof toTopics.min_publish_interval === 'number' ? toTopics.min_publish_interval : 0) * 1000;
             const baseTopic = toTopics.base_topic;
             toTopics.paths.forEach(path => {
                 app.streambundle.getSelfStream(path).onValue(value => {
@@ -67,11 +68,11 @@ module.exports = function(app) {
                     const lastPublishedTime = lastPublishedTimestamps.get(path) || 0;
             
                     // Check if enough time has elapsed since the last update
-                    if ((currentTime - lastPublishedTime) / 1000 >= rateLimitSeconds) {
+                    if ((currentTime - lastPublishedTime) >= rateLimit) {
                         publishDeltaToMqtt(mqttClient, baseTopic, path, value);
                         lastPublishedTimestamps.set(path, currentTime); // Update the last published timestamp
                     } else {
-                        app.debug(`Skipping update for ${path}: Rate limit of ${rateLimitSeconds}s not reached.`);
+                        app.debug(`Skipping update for ${path}: Minimum time interval not reached.`);
                     }
                 });
             
@@ -331,10 +332,6 @@ module.exports = function(app) {
         }        
 
         function publishDataTypesToServer(app, fromTopics) {
-            // TODO: We need to convert the Signal K paths in the 
-            // fromTopics tree into their respective data units for
-            // the Signal K server and submit these updates.
-
             app.debug('Updating data types with server', fromTopics);
 
             let meta = [];
@@ -380,26 +377,6 @@ module.exports = function(app) {
                     app.debug(`${JSON.stringify(sensor)}`)
                 });
             });
-
-            /*
-            {
-                mqtt_topic: 'zigbee2mqtt/Front Cabin Water Sensor',
-                sensors: [
-                    {
-                        json_path: '$.device_temperature',
-                        destination: 'environment.inside.cabinFront.temperature',
-                        sensor: 'temperature',
-                        unit: 'C'
-                    },
-                    {
-                        json_path: '$.water_leak',
-                        destination: 'environment.inside.cabinFront.water_leak',
-                        sensor: 'water_leak',
-                        unit: 'boolean'
-                    }
-               ]
-            }
-         */
 
             return from;
         }
