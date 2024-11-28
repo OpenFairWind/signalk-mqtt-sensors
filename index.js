@@ -106,10 +106,10 @@ module.exports = function(app) {
                 setStatus(`Connected to ${options.mqtt_server}`, false);
 
                 // list topics to subscribe to
-                topics = identifyTopicsForSubscription(fromTopics);
+                const topics = identifyTopicsForSubscription(fromTopics);
                 app.debug("MQTT topics for subscription", topics)
 
-                mqttClient.subscribe(topics, (err, granted) => {
+                mqttClient.subscribe(topics, (err) => {
                     if (err) {
                         console.warn(`Error subscribing to topics: ${err}`);
                     }
@@ -143,6 +143,7 @@ module.exports = function(app) {
                 console.error('MQTT error:', err.message);
                 // Handle critical errors here if needed
                 setStatus(`Connection error: ${err.message}`, true);
+                restartPluginFunc();
             });
 
             // Event: Message received
@@ -262,9 +263,11 @@ module.exports = function(app) {
                         case "atm":
                             app.debug(`Converting pressure from atm to Pa: ${value}`)
                             value = Number(parsedValue) * 101325.0;
+                            break;
                         default:
                             app.debug(`Unknown conversion from ${unit} to SI unit for pressure.`);
                             value = parsedValue;
+                            break;
                     }
                     break;
                 default:
@@ -322,7 +325,7 @@ module.exports = function(app) {
 
             app.debug('Updating data types with server', fromTopics);
 
-            meta = [];
+            let meta = [];
             fromTopics.forEach(topic => {
                 const sensors = topic.sensors;
                 sensors.forEach(sensor => {
@@ -358,10 +361,10 @@ module.exports = function(app) {
                 return [];
 
             app.debug("Loading MQTT sensor definitions...")
-            from.forEach( (topic, index) => {
+            from.forEach( (topic) => {
                 app.debug("MQTT Topic: ", topic);
                 app.debug("  Defined Sensors:");
-                topic.sensors.forEach( (sensor, sensorIndex) => {
+                topic.sensors.forEach( (sensor) => {
                     app.debug(`${JSON.stringify(sensor)}`)
                 });
             });
@@ -409,7 +412,7 @@ module.exports = function(app) {
             }
 
             app.debug("Loading export sensors...");
-            paths.forEach( (topic, index) => {
+            paths.forEach( (topic) => {
                 app.debug(`Export: Path: ${topic.signalk_path} to Topic: ${topic.mqtt_topic}`);
             });
             return to;
