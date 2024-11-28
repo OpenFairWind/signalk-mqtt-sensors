@@ -49,32 +49,36 @@ module.exports = function(app) {
             app.debug("Connecting to MQTT server...");
             const mqttConnection = connectToMqttServer(options, fromTopics);
 
-            app.debug("Connecting to SignalK deltas...");
-            subscribeToDeltas(app, toTopics, mqttConnection);
+            if (toTopics.enabled) {
+                app.debug("Connecting to SignalK deltas...");
+                subscribeToDeltas(app, toTopics, mqttConnection);
+            }
         }
 
         function subscribeToDeltas(app, toTopics,  mqttClient) {
 
-            toTopics.forEach(item => {
-                const path = item.signalk_path;
+            const baseTopic = toTopics.base_topic;
+            toTopics.paths.forEach(path => {
                 app.streambundle.getSelfStream(path).onValue(value => {
                     app.debug(`Delta received for ${path}:`, value);
-                    publishDeltaToMqtt(mqttClient, path, value, item.mqtt_topic);
+                    publishDeltaToMqtt(mqttClient, baseTopic, path, value);
                 })
                 
                 // Publish the current value to MQTT when starting
                 const value = app.getSelfPath(path);
                 if (value !== undefined) {
-                    publishDeltaToMqtt(mqttClient, path, value, item.mqtt_topic);
+                    publishDeltaToMqtt(mqttClient, baseTopic, path, value);
                 }
             })
         }
 
-        function publishDeltaToMqtt(mqttClient, path, value, topic) {
+        function publishDeltaToMqtt(mqttClient, baseTopic, path, value) {
             if (!mqttClient) {
                 app.debug("MQTT client is not connected, cannot publish.");
                 return;
             }
+
+            const topic = `${baseTopic}/${path}`;
         
             const payload = JSON.stringify({
                 path: path,
@@ -387,12 +391,25 @@ module.exports = function(app) {
 
         function loadToTopics(options) {
             const to = options.to;
-            if (!Array.isArray(to)) {
-                return [];
+            if (to == undefined) {
+                return { 
+                    enabled: false,
+                    base_topic: "",
+                    paths: []
+                };
+            }
+            
+            const paths = to.paths;
+            if (!Array.isArray(paths)) {
+                return { 
+                    enabled: false,
+                    base_topic: "",
+                    paths: []
+                };
             }
 
             app.debug("Loading export sensors...");
-            to.forEach( (topic, index) => {
+            paths.forEach( (topic, index) => {
                 app.debug(`Export: Path: ${topic.signalk_path} to Topic: ${topic.mqtt_topic}`);
             });
             return to;

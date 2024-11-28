@@ -43,15 +43,15 @@
         }
     },
     "to":{
-        "items": {
-            "signalk_path": {
-                "ui:widget": "textarea",
-                "ui:options": {
-                    "rows": 1,
-                    "cols": 40
-                }
-            },
-            "mqtt_topic": {
+        "base_topic": {
+            "ui:widget": "textarea",
+            "ui:options": {
+                "rows": 1,
+                "cols": 40
+            }
+        },
+        "paths": {
+            "items": {
                 "ui:widget": "textarea",
                 "ui:options": {
                     "rows": 1,
