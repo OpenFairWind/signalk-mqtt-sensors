@@ -4,7 +4,8 @@
   "description": "Signal K Node Server Plugin that transfers data to/from MQTT and Signal K.",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "lint": "eslint ."
   },
   "keywords": [
     "signalk-node-server-plugin",
@@ -27,5 +28,10 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/rgregg/signalk-mqtt-sensors.git"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.15.0",
+    "eslint": "^9.15.0",
+    "globals": "^15.12.0"
   }
 }
