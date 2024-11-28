@@ -1,0 +1,32 @@
+name: Publish to NPM
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  publish:
+    name: Publish Package
+    runs-on: ubuntu-latest
+
+    steps:
+      # Check out the repository code
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      # Set up Node.js
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 'lts/*'
+          cache: 'npm'
+
+      # Install dependencies and build (if needed)
+      - name: Install Dependencies
+        run: npm install
+
+      # Publish to NPM
+      - name: Publish to NPM
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish
