@@ -1,5 +1,6 @@
 /*
- * Copyright 2024 Ryan Gregg (ryan@ryangregg.com)
+ * Copyright 2024 Ryan Gregg (ryan@ryangregg.com).
+ * Licensed under Apache 2 license. See LICENSE for more information.
  */
 
 const app_name = "signalk-mqtt-sensors";
@@ -28,7 +29,7 @@ module.exports = function(app) {
     plugin.schema =  require("./schema.json")
     plugin.uiSchema = require("./uischema.json")
 
-    var mqttClient = null;
+    plugin.mqttClient = null;
 
     // start method when the plugin is started. Options will
     // match the schema specified in the schema provided above.
@@ -47,27 +48,39 @@ module.exports = function(app) {
         if (options.enabled)
         {
             app.debug("Connecting to MQTT server...");
-            const mqttConnection = connectToMqttServer(options, fromTopics);
+            plugin.mqttConnection = connectToMqttServer(options, fromTopics);
 
             if (toTopics.enabled) {
                 app.debug("Connecting to SignalK deltas...");
-                subscribeToDeltas(app, toTopics, mqttConnection);
+                subscribeToDeltas(app, toTopics, plugin.mqttConnection);
             }
         }
 
         function subscribeToDeltas(app, toTopics,  mqttClient) {
-
+            const lastPublishedTimestamps = new Map(); // Store the last published timestamps for each path
+            const rateLimit = (typeof toTopics.min_publish_interval === 'number' ? toTopics.min_publish_interval : 0) * 1000;
             const baseTopic = toTopics.base_topic;
             toTopics.paths.forEach(path => {
                 app.streambundle.getSelfStream(path).onValue(value => {
                     app.debug(`Delta received for ${path}:`, value);
-                    publishDeltaToMqtt(mqttClient, baseTopic, path, value);
-                })
-                
-                // Publish the current value to MQTT when starting
+            
+                    const currentTime = Date.now();
+                    const lastPublishedTime = lastPublishedTimestamps.get(path) || 0;
+            
+                    // Check if enough time has elapsed since the last update
+                    if ((currentTime - lastPublishedTime) >= rateLimit) {
+                        publishDeltaToMqtt(mqttClient, baseTopic, path, value);
+                        lastPublishedTimestamps.set(path, currentTime); // Update the last published timestamp
+                    } else {
+                        app.debug(`Skipping update for ${path}: Minimum time interval not reached.`);
+                    }
+                });
+            
+                // Publish the current value to MQTT when starting (rate limit is not applied here)
                 const value = app.getSelfPath(path);
                 if (value !== undefined) {
                     publishDeltaToMqtt(mqttClient, baseTopic, path, value);
+                    lastPublishedTimestamps.set(path, Date.now()); // Initialize the last published timestamp
                 }
             })
         }
@@ -100,7 +113,7 @@ module.exports = function(app) {
                 password: options.mqtt_password
             };
     
-            mqttClient = mqtt.connect(options.mqtt_server, client_options);
+            const mqttClient = mqtt.connect(options.mqtt_server, client_options);
             mqttClient.on('connect', () => {
                 console.log(`Connected to MQTT broker: ${options.mqtt_server}`);
                 setStatus(`Connected to ${options.mqtt_server}`, false);
@@ -319,10 +332,6 @@ module.exports = function(app) {
         }        
 
         function publishDataTypesToServer(app, fromTopics) {
-            // TODO: We need to convert the Signal K paths in the 
-            // fromTopics tree into their respective data units for
-            // the Signal K server and submit these updates.
-
             app.debug('Updating data types with server', fromTopics);
 
             let meta = [];
@@ -369,26 +378,6 @@ module.exports = function(app) {
                 });
             });
 
-            /*
-            {
-                mqtt_topic: 'zigbee2mqtt/Front Cabin Water Sensor',
-                sensors: [
-                    {
-                        json_path: '$.device_temperature',
-                        destination: 'environment.inside.cabinFront.temperature',
-                        sensor: 'temperature',
-                        unit: 'C'
-                    },
-                    {
-                        json_path: '$.water_leak',
-                        destination: 'environment.inside.cabinFront.water_leak',
-                        sensor: 'water_leak',
-                        unit: 'boolean'
-                    }
-               ]
-            }
-         */
-
             return from;
         }
 
@@ -421,8 +410,9 @@ module.exports = function(app) {
 
     plugin.stop = function() {
         app.debug(`${app_name} is stopping`);
-        if (mqttClient) {
-            mqttClient.end()
+        if (plugin.mqttClient) {
+            plugin.mqttClient.end()
+            plugin.mqttClient = null;
         }
     }
 

@@ -115,6 +115,12 @@
                     "description": "Base topic for where values are published",
                     "default": "signalk"
                 },
+                "min_publish_interval": {
+                    "type": "number",
+                    "title": "Minimum publish interval (seconds)",
+                    "description": "Set the minimum time, in seconds, before new values are published for a path.",
+                    "default": 30
+                },
                 "enabled": {
                     "type": "boolean",
                     "title": "Enable export to MQTT"
