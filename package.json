@@ -1,7 +1,7 @@
 {
   "name": "signalk-mqtt-sensors",
-  "version": "1.0.0",
-  "description": "Signal K Node Server Plugin that enables data from an MQTT host to be published to Signal K under a configurable set of paths.",
+  "version": "1.1.0",
+  "description": "Signal K Node Server Plugin that transfers data to/from MQTT and Signal K.",
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
