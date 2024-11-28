@@ -24,29 +24,30 @@
         },
         "from": {
             "type": "array",
-            "title": "Define Sensors",
-            "description": "Define MQTT topics and the associated sensors for each topic.",
+            "title": "Import from MQTT",
+            "description": "Configure a set of MQTT topics which will be imported into Signal K as new data points.",
             "items": {
                 "type": "object",
-                "title": "MQTT Sensor Configuration",
+                "title": "MQTT Sensor",
+                "description": "Set an MQTT topic to listen for changes on",
                 "properties": {
                     "mqtt_topic": {
                         "type": "string",
-                        "title": "MQTT Topic",
+                        "title": "Topic",
                         "description": "The MQTT topic to listen on for updates, (e.g. zigbee2mqtt/sensor-name)"
                     },
                     "sensors": {
                         "type": "array",
-                        "title": "Sensors",
-                        "description": "Define one or more sensors for this MQTT topic.",
+                        "title": "Data Points",
+                        "description": "Define one or more data points from this MQTT topic.",
                         "items": {
                             "type": "object",
-                            "title": "Sensor Configuration",
+                            "title": "Sensor",
                             "properties": {
                                 "json_path": {
                                     "type": "string",
                                     "title": "JSON Path",
-                                    "description": "JSON Path to the sensor value in the MQTT message payload.",
+                                    "description": "JSON Path to the sensor value in the MQTT message payload (optional).",
                                     "default": "$.device_temperature"
                                 },
                                 "destination": {
@@ -101,6 +102,33 @@
                     "mqtt_topic",
                     "sensors"
                 ]
+            }
+        },
+        "to": {
+            "type": "object",
+            "title": "Export values to MQTT",
+            "description": "Export values from Signal K to MQTT.",
+            "properties": {
+                "base_topic": {
+                    "type": "string",
+                    "title": "Topic",
+                    "description": "Base topic for where values are published",
+                    "default": "signalk"
+                },
+                "enabled": {
+                    "type": "boolean",
+                    "title": "Enable export to MQTT"
+                },
+                "paths": {
+                    "type": "array",
+                    "title": "Signal K Paths",
+                    "description": "Paths to export from Signal K to MQTT (relative to self)",
+                    "items": {
+                        "type": "string",
+                        "title": "Path"
+                    }
+                }
+                
             }
         }
     }
