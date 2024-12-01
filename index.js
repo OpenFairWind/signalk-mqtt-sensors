@@ -445,7 +445,7 @@ module.exports = function(app) {
                 },
                 name: metadata.displayName || convertPathToDisplayName(path),  // Convert from Signal K path to friendly name
                 state_class: "measurement",
-                device_class: determineDeviceClass(metadata),
+                device_class: determineDeviceClass(path, metadata),
                 unit_of_measurement: metadata.units,
                 unique_id: generateUUIDFromPath(path),              // Hash of the Signal K path & device ID
                 state_topic: `${baseTopic}/${path}`,
@@ -474,15 +474,16 @@ module.exports = function(app) {
             app.debug("Discovery enabled for path", path);
         }
 
-        function determineDeviceClass(metadata) {
+        function determineDeviceClass(path, metadata) {
             if (!metadata) {
                 app.debug("No metadata was available to determine device class");
                 return ""; // Default if metadata is unavailable
             }
+
+            app.debug("processing device class for path", path);
         
             const unit = metadata.units?.toLowerCase();
             const displayName = metadata.displayName?.toLowerCase();
-            const path = metadata.path?.toLowerCase();
         
             // Map units to device_class
             if (unit === "v") return "voltage";
@@ -490,6 +491,7 @@ module.exports = function(app) {
             if (unit === "%") {
                 if (path.includes("humidity")) return "humidity";
                 if (path.includes("battery")) return "battery";
+                return "battery"
             }
             if (unit === "k" || unit === "°c" || unit === "°f") return "temperature";
             if (["pa", "hpa", "atm"].includes(unit)) return "pressure";
