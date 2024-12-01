@@ -416,6 +416,7 @@ module.exports = function(app) {
         }
 
         const hasRegisteredWithHomeAssistant = new Map();
+        const { version } = require('./package.json');
 
         function publishHomeAssistantDiscovery(app, mqttClient, baseTopic, path) {
             
@@ -440,7 +441,7 @@ module.exports = function(app) {
                     manufacturer: "rgregg",
                     model: "signalk-mqtt-sensors",
                     name: "Signal K MQTT Sensors",
-                    sw_version: "1.1.1"
+                    sw_version: version
                 },
                 name: metadata.displayName || convertPathToDisplayName(path),  // Convert from Signal K path to friendly name
                 state_class: "measurement",
