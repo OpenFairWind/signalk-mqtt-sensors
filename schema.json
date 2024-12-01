@@ -125,6 +125,10 @@
                     "type": "boolean",
                     "title": "Enable export to MQTT"
                 },
+                "home_assistant_discovery": {
+                    "type": "boolean",
+                    "title": "Enable Home Assistant MQTT discovery"
+                },
                 "paths": {
                     "type": "array",
                     "title": "Signal K Paths",

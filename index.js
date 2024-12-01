@@ -6,6 +6,7 @@
 const app_name = "signalk-mqtt-sensors";
 const mqtt = require('mqtt');
 const jsonpath = require('jsonpath')
+const crypto = require('crypto');
 
 console.log(`loading ${app_name}`);
 
@@ -56,23 +57,30 @@ module.exports = function(app) {
             }
         }
 
-        function subscribeToDeltas(app, toTopics,  mqttClient) {
+        function subscribeToDeltas(app, toTopics, mqttClient) {
+            const homeAssistantDiscoveryEnabled = toTopics.home_assistant_discovery | false;
             const lastPublishedTimestamps = new Map(); // Store the last published timestamps for each path
             const rateLimit = (typeof toTopics.min_publish_interval === 'number' ? toTopics.min_publish_interval : 0) * 1000;
             const baseTopic = toTopics.base_topic;
             toTopics.paths.forEach(path => {
                 app.streambundle.getSelfStream(path).onValue(value => {
-                    app.debug(`Delta received for ${path}:`, value);
+                    //app.debug(`Delta received for ${path}:`, value);
             
                     const currentTime = Date.now();
                     const lastPublishedTime = lastPublishedTimestamps.get(path) || 0;
+
+                    if (homeAssistantDiscoveryEnabled) 
+                    {
+                        // The first time we encounter a value - register it with Home Assistant
+                        publishHomeAssistantDiscovery(app, mqttClient, toTopics.base_topic, path);
+                    }
             
                     // Check if enough time has elapsed since the last update
                     if ((currentTime - lastPublishedTime) >= rateLimit) {
                         publishDeltaToMqtt(mqttClient, baseTopic, path, value);
                         lastPublishedTimestamps.set(path, currentTime); // Update the last published timestamp
                     } else {
-                        app.debug(`Skipping update for ${path}: Minimum time interval not reached.`);
+                        //app.debug(`Skipping update for ${path}: Minimum time interval not reached.`);
                     }
                 });
             
@@ -406,6 +414,143 @@ module.exports = function(app) {
             });
             return to;
         }
+
+        const hasRegisteredWithHomeAssistant = new Map();
+
+        function publishHomeAssistantDiscovery(app, mqttClient, baseTopic, path) {
+            
+            const isRegistered = hasRegisteredWithHomeAssistant.get(path);
+            if (isRegistered) {
+                return;
+            }
+
+            app.debug("Home Assistant: generating discovery for path", path);
+            const metadata = app.getSelfPath(path + ".meta");
+            if (metadata == undefined) {
+                app.debug(`Path ${path} is not defined in Signal K - skipped.`);
+                return;
+            }
+
+            hasRegisteredWithHomeAssistant.set(path, path);
+            app.debug("Signal K Data for", path, metadata);
+
+            const configPayload = {
+                device: {
+                    identifiers: [ "41c0ad04-4bcd-425a-b749-8bf4554d4cf4" ],
+                    manufacturer: "rgregg",
+                    model: "signalk-mqtt-sensors",
+                    name: "Signal K MQTT Sensors",
+                    sw_version: "1.1.1"
+                },
+                name: metadata.displayName || convertPathToDisplayName(path),  // Convert from Signal K path to friendly name
+                state_class: "measurement",
+                device_class: determineDeviceClass(metadata),
+                unit_of_measurement: metadata.units,
+                unique_id: generateUUIDFromPath(path),              // Hash of the Signal K path & device ID
+                state_topic: `${baseTopic}/${path}`,
+                value_template: "{{ value_json.value }}"
+            };
+
+            app.debug("Registering HA entity for path: ", configPayload);
+            
+            // Publish the discovery message to the correct topic
+            const component = "sensor"; // Change this based on the type of device (e.g., binary_sensor)
+            const objectId = configPayload.unique_id;
+            const discoveryTopic = `homeassistant/${component}/${objectId}/config`;
+
+            mqttClient.publish(
+                discoveryTopic,
+                JSON.stringify(configPayload),
+                { retain: true, qos: 1 },
+                (err) => {
+                    if (err) {
+                        app.debug(`Failed to publish HA discovery config for ${path}: ${err.message}`);
+                    } else {
+                        app.debug(`Published HA discovery config for ${path} to ${discoveryTopic}`);
+                    }
+                }
+            );
+            app.debug("Discovery enabled for path", path);
+        }
+
+        function determineDeviceClass(metadata) {
+            if (!metadata) {
+                app.debug("No metadata was available to determine device class");
+                return ""; // Default if metadata is unavailable
+            }
+        
+            const unit = metadata.units?.toLowerCase();
+            const displayName = metadata.displayName?.toLowerCase();
+            const path = metadata.path?.toLowerCase();
+        
+            // Map units to device_class
+            if (unit === "v") return "voltage";
+            if (unit === "a") return "current";
+            if (unit === "%") {
+                if (path.includes("humidity")) return "humidity";
+                if (path.includes("battery")) return "battery";
+            }
+            if (unit === "k" || unit === "°c" || unit === "°f") return "temperature";
+            if (["pa", "hpa", "atm"].includes(unit)) return "pressure";
+            if (unit === "boolean") {
+                if (path.includes("water") || displayName.includes("leak")) return "moisture";
+                return "problem";
+            }
+        
+            // Fallback for other cases based on path or displayName
+            if (path.includes("voltage")) return "voltage";
+            if (path.includes("amperage") || path.includes("current")) return "current";
+            if (path.includes("temperature")) return "temperature";
+        
+            app.debug(`No device_class was determined for data ${displayName}`);
+            return ""; // Default if no match is found
+        }
+
+        /**
+         * Converts a Signal K path to a display name.
+         * @param {string} path - The Signal K path (e.g., "electrical.batteries.house.voltage").
+         * @returns {string} - The human-readable display name (e.g., "Electrical Batteries House Voltage").
+         */
+        function convertPathToDisplayName(path) {
+            if (!path || typeof path !== "string") {
+                throw new Error("Invalid path: Path must be a non-empty string.");
+            }
+
+            // Split the path into components using the '.' delimiter
+            const components = path.split('.');
+
+            // Capitalize the first letter of each component and join them with spaces
+            const displayName = components
+                .map(component => component.charAt(0).toUpperCase() + component.slice(1))
+                .join(' ');
+
+            return displayName;
+        }
+
+        /**
+         * Generates a UUID based on the hash of the input string.
+         * @param {string} input - The input string to hash (e.g., a Signal K path).
+         * @returns {string} - The generated UUID.
+         */
+        function generateUUIDFromPath(input) {
+            if (!input || typeof input !== "string") {
+                throw new Error("Invalid input: must be a non-empty string.");
+            }
+
+            // Hash the input string using SHA-1
+            const hash = crypto.createHash('sha1').update(input).digest('hex');
+
+            // Format the hash into a UUID
+            const uuid = [
+                hash.slice(0, 8),        // 8 characters
+                hash.slice(8, 12),       // 4 characters
+                `4${hash.slice(13, 16)}`, // 4 characters, 4 indicates version 4 UUID
+                `${(parseInt(hash[16], 16) & 0x3 | 0x8).toString(16)}${hash.slice(17, 20)}`, // 4 characters
+                hash.slice(20, 32)       // 12 characters
+            ].join('-');
+
+            return uuid;
+        }
     }
 
     plugin.stop = function() {
@@ -426,5 +571,4 @@ module.exports = function(app) {
     }
 
     return plugin;
-
 }
