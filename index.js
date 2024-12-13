@@ -72,7 +72,7 @@ module.exports = function(app) {
          * @param {MqttClient} mqttClient - The MQTT client instance used for publishing
          */
         function subscribeToDeltas(app, toTopics, mqttClient) {
-            const homeAssistantDiscoveryEnabled = toTopics.home_assistant_discovery | false;
+            const homeAssistantDiscoveryEnabled = toTopics.home_assistant_discovery || false;
             const lastPublishedTimestamps = new Map(); // Store the last published timestamps for each path
             const rateLimit = (typeof toTopics.min_publish_interval === 'number' ? toTopics.min_publish_interval : 0) * 1000;
             const baseTopic = toTopics.base_topic;
@@ -524,7 +524,7 @@ module.exports = function(app) {
                 return;
             }
 
-            hasRegisteredWithHomeAssistant.set(path, path);
+            hasRegisteredWithHomeAssistant.set(path, true);
             app.debug("Signal K Data for", path, metadata);
 
             if (metadata.properties != undefined) {
