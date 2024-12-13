@@ -527,29 +527,59 @@ module.exports = function(app) {
             hasRegisteredWithHomeAssistant.set(path, path);
             app.debug("Signal K Data for", path, metadata);
 
+            if (metadata.properties != undefined) {
+                // There are multiple properties we need to emit, not just a single value
+                for (let key in metadata.properties) {
+                    registerHomeAssistantEntity(metadata.properties[key], path, baseTopic, app, mqttClient, "{{ value_json.value." + key + " }}");
+                };
+            } else {
+                registerHomeAssistantEntity(metadata, path, baseTopic, app, mqttClient, null);
+            }
+            
+            app.debug("Discovery enabled for path", path);
+        }
+
+        function registerHomeAssistantEntity(metadata, path, baseTopic, app, mqttClient, value_template) {
+            if (!metadata) {
+                app.debug(`Metadata for path ${path} is null or undefined. Skipping registration.`);
+                return;
+            }
+            let displayName = convertPathToDisplayName(path);
+            if (value_template != null && metadata.description) {
+                displayName += ` ${metadata.description}`;
+            }
+            
+            const deviceClass = determineDeviceClass(path, metadata);
+            if (!deviceClass) {
+                app.debug(`No device class determined for path ${path}. Proceeding without device class.`);
+            }
+            
+            const uniqueId = generateUUIDFromPath(path + value_template);
+            const stateClass = "measurement"; // Default state class for sensors
+
             const configPayload = {
                 device: {
-                    identifiers: [ "41c0ad04-4bcd-425a-b749-8bf4554d4cf4" ],
-                    manufacturer: "rgregg",
+                    identifiers: ["41c0ad04-4bcd-425a-b749-8bf4554d4cf4"],
+                    manufacturer: "signalk-mqtt-sensors",
                     model: "signalk-mqtt-sensors",
                     name: "Signal K MQTT Sensors",
                     sw_version: version
                 },
-                name: metadata.displayName || convertPathToDisplayName(path),  // Convert from Signal K path to friendly name
-                state_class: "measurement",
-                device_class: determineDeviceClass(path, metadata),
-                unit_of_measurement: metadata.units,
-                unique_id: generateUUIDFromPath(path),              // Hash of the Signal K path & device ID
+                name: displayName,
+                state_class: stateClass,
+                device_class: deviceClass,
+                unit_of_measurement: metadata.units || null,
+                unique_id: uniqueId,
                 state_topic: `${baseTopic}/${path}`,
-                value_template: "{{ value_json.value }}"
+                value_template: value_template || "{{ value_json.value }}"
             };
 
             app.debug("Registering HA entity for path: ", configPayload);
-            
+
             // Publish the discovery message to the correct topic
             const component = "sensor"; // Change this based on the type of device (e.g., binary_sensor)
             const objectId = configPayload.unique_id;
-            const discoveryTopic = `homeassistant/${component}/${objectId}/config`;
+            const discoveryTopic = `homeassistant/${component}/mqtt-sensors-${objectId}/config`;
 
             mqttClient.publish(
                 discoveryTopic,
@@ -563,7 +593,6 @@ module.exports = function(app) {
                     }
                 }
             );
-            app.debug("Discovery enabled for path", path);
         }
 
         /**
@@ -575,7 +604,7 @@ module.exports = function(app) {
         function determineDeviceClass(path, metadata) {
             if (!metadata) {
                 app.debug("No metadata was available to determine device class");
-                return ""; // Default if metadata is unavailable
+                return null; // Default if metadata is unavailable
             }
 
             app.debug("processing device class for path", path);
@@ -603,8 +632,8 @@ module.exports = function(app) {
             if (path.includes("amperage") || path.includes("current")) return "current";
             if (path.includes("temperature")) return "temperature";
         
-            app.debug(`No device_class was determined for data ${displayName}`);
-            return ""; // Default if no match is found
+            app.debug(`Unhandled metadata for determining device class: ${path} - ${JSON.stringify(metadata)}`);
+            return null; // Default if no match is found
         }
 
         /**
