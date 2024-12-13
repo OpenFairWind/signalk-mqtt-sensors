@@ -6,9 +6,13 @@
 const app_name = "signalk-mqtt-sensors";
 const mqtt = require('mqtt');
 const jsonpath = require('jsonpath')
+const crypto = require('crypto');
 
 console.log(`loading ${app_name}`);
 
+/**
+ * The types of sensors supported by this plugin
+ */
 const SensorType = Object.freeze({
     TEMPERATURE: "temperature",
     WATER_LEAK: "water_leak",
@@ -19,22 +23,26 @@ const SensorType = Object.freeze({
 });
 
 module.exports = function(app) {
-    var plugin = {};
+    const plugin = {};
+    const hasRegisteredWithHomeAssistant = new Map();
 
     plugin.id = app_name;
-    plugin.name = "MQTT Sensors"
+    plugin.name = "MQTT Sensors";
     plugin.description = "Signal K node server plugin for mapping values between MQTT and Signal K topics";
 
     // define the option schema for the add-on
-    plugin.schema =  require("./schema.json")
-    plugin.uiSchema = require("./uischema.json")
+    plugin.schema =  require("./schema.json");
+    plugin.uiSchema = require("./uischema.json");
 
     plugin.mqttClient = null;
 
-    // start method when the plugin is started. Options will
-    // match the schema specified in the schema provided above.
+    /**
+     * Starts the plugin and connects to the MQTT server
+     * @param {Object} options - The configuration options
+     * @param {Function} restartPluginFunc - The function to restart the plugin
+     */
     plugin.start = function(options, restartPluginFunc) {
-        console.log(`Staring ${app_name}`);
+        console.log(`Starting ${app_name}`);
         
         const fromTopics = loadFromTopics(options);
         const toTopics = loadToTopics(options);
@@ -48,31 +56,45 @@ module.exports = function(app) {
         if (options.enabled)
         {
             app.debug("Connecting to MQTT server...");
-            plugin.mqttConnection = connectToMqttServer(options, fromTopics);
+            plugin.mqttClient = connectToMqttServer(options, fromTopics);
 
             if (toTopics.enabled) {
                 app.debug("Connecting to SignalK deltas...");
-                subscribeToDeltas(app, toTopics, plugin.mqttConnection);
+                subscribeToDeltas(app, toTopics, plugin.mqttClient);
             }
         }
 
-        function subscribeToDeltas(app, toTopics,  mqttClient) {
+        /**
+         * Subscribes to SignalK delta updates for specified paths and publishes them to MQTT topics.
+         * Handles Home Assistant discovery and rate limiting of updates.
+         * @param {object} app - The SignalK server app instance
+         * @param {object} toTopics - Configuration object containing MQTT publishing settings
+         * @param {MqttClient} mqttClient - The MQTT client instance used for publishing
+         */
+        function subscribeToDeltas(app, toTopics, mqttClient) {
+            const homeAssistantDiscoveryEnabled = toTopics.home_assistant_discovery || false;
             const lastPublishedTimestamps = new Map(); // Store the last published timestamps for each path
             const rateLimit = (typeof toTopics.min_publish_interval === 'number' ? toTopics.min_publish_interval : 0) * 1000;
             const baseTopic = toTopics.base_topic;
             toTopics.paths.forEach(path => {
                 app.streambundle.getSelfStream(path).onValue(value => {
-                    app.debug(`Delta received for ${path}:`, value);
+                    //app.debug(`Delta received for ${path}:`, value);
             
                     const currentTime = Date.now();
                     const lastPublishedTime = lastPublishedTimestamps.get(path) || 0;
+
+                    if (homeAssistantDiscoveryEnabled) 
+                    {
+                        // The first time we encounter a value - register it with Home Assistant
+                        publishHomeAssistantDiscovery(app, mqttClient, toTopics.base_topic, path);
+                    }
             
                     // Check if enough time has elapsed since the last update
                     if ((currentTime - lastPublishedTime) >= rateLimit) {
                         publishDeltaToMqtt(mqttClient, baseTopic, path, value);
                         lastPublishedTimestamps.set(path, currentTime); // Update the last published timestamp
                     } else {
-                        app.debug(`Skipping update for ${path}: Minimum time interval not reached.`);
+                        //app.debug(`Skipping update for ${path}: Minimum time interval not reached.`);
                     }
                 });
             
@@ -85,6 +107,13 @@ module.exports = function(app) {
             })
         }
 
+        /**
+         * Publishes a SignalK delta value to an MQTT topic
+         * @param {MqttClient} mqttClient - The MQTT client instance used for publishing
+         * @param {string} baseTopic - The base MQTT topic to publish to
+         * @param {string} path - The SignalK path of the value
+         * @param {any} value - The value to publish
+         */
         function publishDeltaToMqtt(mqttClient, baseTopic, path, value) {
             if (!mqttClient) {
                 app.debug("MQTT client is not connected, cannot publish.");
@@ -93,10 +122,23 @@ module.exports = function(app) {
 
             const topic = `${baseTopic}/${path}`;
         
-            const payload = JSON.stringify({
-                path: path,
-                value: value
-            });
+            let payload;
+            try {
+                // Check if value is already a JSON string
+                const parsedValue = JSON.parse(value);
+                // If we get here, it's valid JSON, so include it directly
+                payload = {
+                    path: path,
+                    value: parsedValue
+                };
+            } catch {
+                // Not JSON, treat as regular value
+                payload = {
+                    path: path,
+                    value: value
+                };
+            }
+            payload = JSON.stringify(payload);
         
             mqttClient.publish(topic, payload, { qos: 1 }, (err) => {
                 if (err) {
@@ -107,6 +149,12 @@ module.exports = function(app) {
             });
         }
 
+        /**
+         * Establishes a connection to the MQTT server and sets up event handlers
+         * @param {Object} options - Configuration options including mqtt_server, mqtt_username, and mqtt_password
+         * @param {Array<string>} fromTopics - Array of MQTT topics to subscribe to
+         * @returns {MqttClient} The connected MQTT client instance
+         */
         function connectToMqttServer(options, fromTopics) {
             const client_options = {
                 username: options.mqtt_username,
@@ -190,6 +238,22 @@ module.exports = function(app) {
             return null; // Return null if no match is found
         }
 
+        /**
+         * Processes an MQTT message and converts it into Signal K delta format.
+         * 
+         * @param {string} topic - The MQTT topic the message was received on
+         * @param {string} value - The message payload received from MQTT. Can be either a raw value
+         *                        or a JSON string if json_path is specified in the sensor config
+         * @returns {Array} An array of Signal K delta objects ready to be sent to the server, or
+         *                 undefined if no matching topic configuration is found
+         * 
+         * The function:
+         * 1. Looks up the topic configuration from fromTopics
+         * 2. For each sensor configured for that topic:
+         *    - If a json_path is specified, extracts the value using that path
+         *    - Otherwise uses the raw value
+         * 3. Converts the value into Signal K delta format using prepareDelta()
+         */
         function processMqttMessage(topic, value) {
             const config = getTopic(fromTopics, topic)
             if (null == config)
@@ -232,6 +296,12 @@ module.exports = function(app) {
             return deltas;
         }
 
+        /**
+         * Converts the value from the MQTT message into the expected Signal K format
+         * @param {Object} sensor - The sensor configuration object
+         * @param {any} parsedValue - The value parsed from the MQTT message
+         * @returns {Object} The Signal K delta object
+         */
         function prepareDelta(sensor, parsedValue) {
             // Do any conversions necessary between the input value defined by the sensor
             // parameters and the expected output value for that data type in Signal K.
@@ -293,9 +363,12 @@ module.exports = function(app) {
             }
         }
 
-        // Return an array of strings with the unique values
-        // of the mqtt_topics parameter from the objects in the from field
-        // in the mqtt-sensors.yaml file
+        /**
+         * Extracts and deduplicates MQTT topics from configuration objects
+         * @param {Array} fromTopics - Array of objects from the 'from' field in mqtt-sensors.yaml
+         * @returns {Array<string>} Array of unique MQTT topic strings
+         * @throws {Error} If fromTopics is not an array
+         */
         function identifyTopicsForSubscription(fromTopics) {
             if (!Array.isArray(fromTopics)) {
                 throw new Error("Invalid input: fromTopics must be an array");
@@ -313,6 +386,12 @@ module.exports = function(app) {
             // Convert the Set back to an array
             return Array.from(uniqueTopics);
         }
+
+        /**
+         * Returns the SI unit for a given sensor type
+         * @param {string} sensorType - The type of sensor
+         * @returns {string} The SI unit for the sensor type
+         */
         function getSIUnit(sensorType) {
             switch (sensorType) {
                 case SensorType.TEMPERATURE:
@@ -331,6 +410,11 @@ module.exports = function(app) {
             }
         }        
 
+        /**
+         * Publishes the data types to the server
+         * @param {Object} app - The SignalK server app instance
+         * @param {Array} fromTopics - Array of objects from the 'from' field in mqtt-sensors.yaml
+         */
         function publishDataTypesToServer(app, fromTopics) {
             app.debug('Updating data types with server', fromTopics);
 
@@ -363,6 +447,11 @@ module.exports = function(app) {
             }
         }
 
+        /**
+         * Loads the MQTT sensor definitions from the configuration file
+         * @param {Object} options - The configuration options
+         * @returns {Array} An array of sensor definitions
+         */
         function loadFromTopics(options) {
             const from = options.from;
 
@@ -381,6 +470,11 @@ module.exports = function(app) {
             return from;
         }
 
+        /**
+         * Loads the MQTT sensor definitions from the configuration file
+         * @param {Object} options - The configuration options
+         * @returns {Object} The MQTT sensor definitions
+         */
         function loadToTopics(options) {
             const to = options.to;
             if (to == undefined) {
@@ -406,16 +500,207 @@ module.exports = function(app) {
             });
             return to;
         }
-    }
 
-    plugin.stop = function() {
-        app.debug(`${app_name} is stopping`);
-        if (plugin.mqttClient) {
-            plugin.mqttClient.end()
-            plugin.mqttClient = null;
+        const { version } = require('./package.json');
+
+        /**
+         * Publishes a Signal K path to the Home Assistant discovery topic
+         * @param {Object} app - The SignalK server app instance
+         * @param {MqttClient} mqttClient - The MQTT client instance used for publishing
+         * @param {string} baseTopic - The base MQTT topic to publish to
+         * @param {string} path - The SignalK path of the value
+         */
+        function publishHomeAssistantDiscovery(app, mqttClient, baseTopic, path) {
+            
+            const isRegistered = hasRegisteredWithHomeAssistant.get(path);
+            if (isRegistered) {
+                return;
+            }
+
+            app.debug("Home Assistant: generating discovery for path", path);
+            const metadata = app.getSelfPath(path + ".meta");
+            if (metadata == undefined) {
+                app.debug(`Path ${path} is not defined in Signal K - skipped.`);
+                return;
+            }
+
+            hasRegisteredWithHomeAssistant.set(path, true);
+            app.debug("Signal K Data for", path, metadata);
+
+            if (metadata.properties != undefined) {
+                // There are multiple properties we need to emit, not just a single value
+                for (let key in metadata.properties) {
+                    registerHomeAssistantEntity(metadata.properties[key], path, baseTopic, app, mqttClient, "{{ value_json.value." + key + " }}");
+                };
+            } else {
+                registerHomeAssistantEntity(metadata, path, baseTopic, app, mqttClient, null);
+            }
+            
+            app.debug("Discovery enabled for path", path);
+        }
+
+        function registerHomeAssistantEntity(metadata, path, baseTopic, app, mqttClient, value_template) {
+            if (!metadata) {
+                app.debug(`Metadata for path ${path} is null or undefined. Skipping registration.`);
+                return;
+            }
+            let displayName = convertPathToDisplayName(path);
+            if (value_template != null && metadata.description) {
+                displayName += ` ${metadata.description}`;
+            }
+            
+            const deviceClass = determineDeviceClass(path, metadata);
+            if (!deviceClass) {
+                app.debug(`No device class determined for path ${path}. Proceeding without device class.`);
+            }
+            
+            const uniqueId = generateUUIDFromPath(path + value_template);
+            const stateClass = "measurement"; // Default state class for sensors
+
+            const configPayload = {
+                device: {
+                    identifiers: ["41c0ad04-4bcd-425a-b749-8bf4554d4cf4"],
+                    manufacturer: "signalk-mqtt-sensors",
+                    model: "signalk-mqtt-sensors",
+                    name: "Signal K MQTT Sensors",
+                    sw_version: version
+                },
+                name: displayName,
+                state_class: stateClass,
+                device_class: deviceClass,
+                unit_of_measurement: metadata.units || null,
+                unique_id: uniqueId,
+                state_topic: `${baseTopic}/${path}`,
+                value_template: value_template || "{{ value_json.value }}"
+            };
+
+            app.debug("Registering HA entity for path: ", configPayload);
+
+            // Publish the discovery message to the correct topic
+            const component = "sensor"; // Change this based on the type of device (e.g., binary_sensor)
+            const objectId = configPayload.unique_id;
+            const discoveryTopic = `homeassistant/${component}/mqtt-sensors-${objectId}/config`;
+
+            mqttClient.publish(
+                discoveryTopic,
+                JSON.stringify(configPayload),
+                { retain: true, qos: 1 },
+                (err) => {
+                    if (err) {
+                        app.debug(`Failed to publish HA discovery config for ${path}: ${err.message}`);
+                    } else {
+                        app.debug(`Published HA discovery config for ${path} to ${discoveryTopic}`);
+                    }
+                }
+            );
+        }
+
+        /**
+         * Determines the device class for a given Signal K path
+         * @param {string} path - The SignalK path
+         * @param {Object} metadata - The metadata object for the path
+         * @returns {string} The device class
+         */
+        function determineDeviceClass(path, metadata) {
+            if (!metadata) {
+                app.debug("No metadata was available to determine device class");
+                return null; // Default if metadata is unavailable
+            }
+
+            app.debug("processing device class for path", path);
+        
+            const unit = metadata.units?.toLowerCase();
+            const displayName = metadata.displayName?.toLowerCase();
+        
+            // Map units to device_class
+            if (unit === "v") return "voltage";
+            if (unit === "a") return "current";
+            if (unit === "%") {
+                if (path.includes("humidity")) return "humidity";
+                if (path.includes("battery")) return "battery";
+                return "battery"
+            }
+            if (unit === "k" || unit === "°c" || unit === "°f") return "temperature";
+            if (["pa", "hpa", "atm"].includes(unit)) return "pressure";
+            if (unit === "boolean") {
+                if (path.includes("water") || displayName.includes("leak")) return "moisture";
+                return "problem";
+            }
+        
+            // Fallback for other cases based on path or displayName
+            if (path.includes("voltage")) return "voltage";
+            if (path.includes("amperage") || path.includes("current")) return "current";
+            if (path.includes("temperature")) return "temperature";
+        
+            app.debug(`Unhandled metadata for determining device class: ${path} - ${JSON.stringify(metadata)}`);
+            return null; // Default if no match is found
+        }
+
+        /**
+         * Converts a Signal K path to a display name.
+         * @param {string} path - The Signal K path (e.g., "electrical.batteries.house.voltage").
+         * @returns {string} - The human-readable display name (e.g., "Electrical Batteries House Voltage").
+         */
+        function convertPathToDisplayName(path) {
+            if (!path || typeof path !== "string") {
+                throw new Error("Invalid path: Path must be a non-empty string.");
+            }
+
+            // Split the path into components using the '.' delimiter
+            const components = path.split('.');
+
+            // Capitalize the first letter of each component and join them with spaces
+            const displayName = components
+                .map(component => component.charAt(0).toUpperCase() + component.slice(1))
+                .join(' ');
+
+            return displayName;
+        }
+
+        /**
+         * Generates a UUID based on the hash of the input string.
+         * @param {string} input - The input string to hash (e.g., a Signal K path).
+         * @returns {string} - The generated UUID.
+         */
+        function generateUUIDFromPath(input) {
+            if (!input || typeof input !== "string") {
+                throw new Error("Invalid input: must be a non-empty string.");
+            }
+
+            // Hash the input string using SHA-1
+            const hash = crypto.createHash('sha1').update(input).digest('hex');
+
+            // Format the hash into a UUID
+            const uuid = [
+                hash.slice(0, 8),        // 8 characters
+                hash.slice(8, 12),       // 4 characters
+                `4${hash.slice(12, 15)}`, // 4 characters, 4 indicates version 4 UUID
+                `${(parseInt(hash[16], 16) & 0x3 | 0x8).toString(16)}${hash.slice(17, 20)}`, // 4 characters
+                hash.slice(20, 32)       // 12 characters
+            ].join('-');
+
+            return uuid;
         }
     }
 
+    /**
+     * Stops the plugin and disconnects from the MQTT server
+     */
+    plugin.stop = function() {
+        app.debug(`${app_name} is stopping`);
+        if (plugin.mqttClient) {
+            plugin.mqttClient.end();
+            plugin.mqttClient = null;
+        }
+        // Clear the registration map
+        hasRegisteredWithHomeAssistant.clear();
+    }
+
+    /**
+     * Sets the status message for the plugin
+     * @param {string} statusMessage - The status message
+     * @param {boolean} isError - Whether the status message is an error
+     */
     function setStatus(statusMessage, isError) {
         if (isError) {
             app.setPluginError(statusMessage)
@@ -426,5 +711,4 @@ module.exports = function(app) {
     }
 
     return plugin;
-
 }
