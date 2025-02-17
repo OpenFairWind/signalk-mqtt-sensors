@@ -560,9 +560,9 @@ module.exports = function(app) {
             const configPayload = {
                 device: {
                     identifiers: ["41c0ad04-4bcd-425a-b749-8bf4554d4cf4"],
-                    manufacturer: "signalk-mqtt-sensors",
-                    model: "signalk-mqtt-sensors",
-                    name: "Signal K MQTT Sensors",
+                    manufacturer: "signalk-sensors",
+                    model: "signalk-sensors",
+                    name: "SignalK Sensors",
                     sw_version: version
                 },
                 name: displayName,
