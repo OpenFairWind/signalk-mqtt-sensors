@@ -574,6 +574,11 @@ module.exports = function(app) {
                 value_template: value_template || "{{ value_json.value }}"
             };
 
+            // Ensure device_class is null if it's an empty string
+            if (configPayload.device_class === "") {
+                configPayload.device_class = null;
+            }
+
             app.debug("Registering HA entity for path: ", configPayload);
 
             // Publish the discovery message to the correct topic
@@ -599,7 +604,8 @@ module.exports = function(app) {
          * Determines the device class for a given Signal K path
          * @param {string} path - The SignalK path
          * @param {Object} metadata - The metadata object for the path
-         * @returns {string} The device class
+         * @returns {string} The device class - must be one of the following:
+         * 'date', 'enum', 'timestamp', 'apparent_power', 'aqi', 'area', 'atmospheric_pressure', 'battery', 'blood_glucose_concentration', 'carbon_monoxide', 'carbon_dioxide', 'conductivity', 'current', 'data_rate', 'data_size', 'distance', 'duration', 'energy', 'energy_storage', 'frequency', 'gas', 'humidity', 'illuminance', 'irradiance', 'moisture', 'monetary', 'nitrogen_dioxide', 'nitrogen_monoxide', 'nitrous_oxide', 'ozone', 'ph', 'pm1', 'pm10', 'pm25', 'power_factor', 'power', 'precipitation', 'precipitation_intensity', 'pressure', 'reactive_power', 'signal_strength', 'sound_pressure', 'speed', 'sulphur_dioxide', 'temperature', 'volatile_organic_compounds', 'volatile_organic_compounds_parts', 'voltage', 'volume', 'volume_storage', 'volume_flow_rate', 'water', 'weight', 'wind_speed'
          */
         function determineDeviceClass(path, metadata) {
             if (!metadata) {
