@@ -158,13 +158,21 @@ module.exports = function(app) {
         function connectToMqttServer(options, fromTopics) {
             const client_options = {
                 username: options.mqtt_username,
-                password: options.mqtt_password
+                password: options.mqtt_password,
+                reconnectPeriod: 5000, // Auto reconnect every 5 seconds
+                connectTimeout: 30000  // Connection timeout of 30 seconds
             };
     
             const mqttClient = mqtt.connect(options.mqtt_server, client_options);
             mqttClient.on('connect', () => {
                 console.log(`Connected to MQTT broker: ${options.mqtt_server}`);
                 setStatus(`Connected to ${options.mqtt_server}`, false);
+                
+                // Reset reconnection state if we were reconnecting
+                if (mqttClient.reconnecting) {
+                    mqttClient.reconnecting = false;
+                    console.log('MQTT reconnection successful');
+                }
 
                 // list topics to subscribe to
                 const topics = identifyTopicsForSubscription(fromTopics);
@@ -174,7 +182,6 @@ module.exports = function(app) {
                     if (err) {
                         console.warn(`Error subscribing to topics: ${err}`);
                     }
-
                     else {
                         app.debug("Subscribed to all required topics");
                     }
@@ -190,21 +197,46 @@ module.exports = function(app) {
             // Event: Reconnect attempt
             mqttClient.on('reconnect', () => {
                 console.log('Attempting to reconnect to MQTT broker...');
-                setStatus("Attemping to reconnect to MQTT broker...", false);
+                setStatus("Attempting to reconnect to MQTT broker...", false);
             });
 
             // Event: Connection closed
             mqttClient.on('close', () => {
                 console.log('MQTT connection closed');
-                setStatus("Connect closed.", false);
+                setStatus("Connection closed.", false);
             });
 
             // Event: Error
             mqttClient.on('error', (err) => {
                 console.error('MQTT error:', err.message);
-                // Handle critical errors here if needed
                 setStatus(`Connection error: ${err.message}`, true);
-                restartPluginFunc();
+                
+                // Implement reconnection logic with exponential backoff
+                if (!mqttClient.reconnecting) {
+                    mqttClient.reconnecting = true;
+                    let retryCount = 0;
+                    const maxRetries = 20;
+                    const reconnectWithBackoff = () => {
+                        if (retryCount < maxRetries) {
+                            const delay = Math.min(30000, Math.pow(2, retryCount) * 1000); // Exponential backoff capped at 30 seconds
+                            retryCount++;
+                            console.log(`MQTT reconnect attempt ${retryCount}/${maxRetries} in ${delay/1000} seconds...`);
+                            setTimeout(() => {
+                                if (!mqttClient.connected) {
+                                    console.log('Attempting to reconnect to MQTT broker...');
+                                    mqttClient.reconnect();
+                                } else {
+                                    mqttClient.reconnecting = false;
+                                }
+                            }, delay);
+                        } else {
+                            console.error('Maximum MQTT reconnection attempts reached.');
+                            setStatus('Maximum reconnection attempts reached. Please check MQTT server.', true);
+                            mqttClient.reconnecting = false;
+                        }
+                    };
+                    reconnectWithBackoff();
+                }
             });
 
             // Event: Message received
