@@ -39,9 +39,8 @@ module.exports = function(app) {
     /**
      * Starts the plugin and connects to the MQTT server
      * @param {Object} options - The configuration options
-     * @param {Function} restartPluginFunc - The function to restart the plugin
      */
-    plugin.start = function(options, restartPluginFunc) {
+    plugin.start = function(options) {
         console.log(`Starting ${app_name}`);
         
         const fromTopics = loadFromTopics(options);
