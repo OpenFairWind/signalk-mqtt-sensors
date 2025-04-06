@@ -27,7 +27,7 @@
   "homepage": "https://github.com/rgregg/signalk-mqtt-sensors#readme",
   "repository": {
     "type": "git",
-    "url": "https://github.com/rgregg/signalk-mqtt-sensors.git"
+    "url": "git+https://github.com/rgregg/signalk-mqtt-sensors.git"
   },
   "devDependencies": {
     "@eslint/js": "^9.15.0",
