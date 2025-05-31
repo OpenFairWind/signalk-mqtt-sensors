@@ -19,6 +19,8 @@ const SensorType = Object.freeze({
     HUMIDITY: "humidity",
     BATTERY: "battery",
     PRESSURE: "pressure",
+    WIND_DIR: "wind_dir",
+    WIND_SPEED: "wind_speed",
     OTHER: "other"
 });
 
@@ -243,13 +245,31 @@ module.exports = function(app) {
                 app.debug(`Received MQTT message: ${message.toString()} on topic: ${topic}`);
 
                 let deltas = processMqttMessage(topic, message.toString());
-                const data = {
+                let data = {
                     updates: [
                       {
                         values: deltas
                       }
                     ]
                 };
+
+                // Get the configuration related to the topic
+                const config = getTopic(fromTopics, topic)
+
+                // Check if the configuration is valid
+                if (null == config)  {
+
+                    // Show a message
+                    app.debug("Couldn't find a registration for MQTT topic", topic);
+                } else {
+
+                    // Check if signal_context is defined and not empty
+                    if (config.signlk_context !== undefined && config.signlk_context!=='') {
+
+                        // Set the context
+                        data.context = config.signalk_context;
+                    }
+                }
 
                 if (data) {
                     app.debug("Updating app with deltas: ", data)
@@ -344,18 +364,18 @@ module.exports = function(app) {
             app.debug(`Preparing delta for ${type} with unit ${unit} to path ${signalk_path}`);
             switch(type) {
                 case SensorType.TEMPERATURE:
-                    if (unit == "F") {
+                    if (unit === "F") {
                         // Convert from F to K
                         value = (Number(parsedValue) - 32) / 1.8 + 273.15;
                         value = parseFloat(value.toFixed(2)); // Rounds to 2 decimal points
                         app.debug(`Converting temperature from F to K: ${value}`);
-                    } else if (unit == "C") {
+                    } else if (unit === "C") {
                         // Convert from C to K
                         value = Number(parsedValue) + 273.15;
                         value = parseFloat(value.toFixed(2)); // Rounds to 2 decimal points
                         app.debug(`Converting temperature from C to K: ${value}`);                        
                     }
-                    else if (unit == "K") {
+                    else if (unit === "K") {
                         app.debug("No data conversion necessary");
                         value = Number(parsedValue);
                     }
@@ -508,7 +528,7 @@ module.exports = function(app) {
          */
         function loadToTopics(options) {
             const to = options.to;
-            if (to == undefined) {
+            if (to === undefined) {
                 return { 
                     enabled: false,
                     base_topic: "",
@@ -550,7 +570,7 @@ module.exports = function(app) {
 
             app.debug("Home Assistant: generating discovery for path", path);
             const metadata = app.getSelfPath(path + ".meta");
-            if (metadata == undefined) {
+            if (metadata === undefined) {
                 app.debug(`Path ${path} is not defined in Signal K - skipped.`);
                 return;
             }
@@ -558,7 +578,7 @@ module.exports = function(app) {
             hasRegisteredWithHomeAssistant.set(path, true);
             app.debug("Signal K Data for", path, metadata);
 
-            if (metadata.properties != undefined) {
+            if (metadata.properties !== undefined) {
                 // There are multiple properties we need to emit, not just a single value
                 for (let key in metadata.properties) {
                     registerHomeAssistantEntity(metadata.properties[key], path, baseTopic, app, mqttClient, "{{ value_json.value." + key + " }}");
