@@ -11,6 +11,13 @@
     },
     "from": {
         "items": {
+            "signalk_context": {
+                "ui:widget": "textarea",
+                "ui:options": {
+                    "rows": 1,
+                    "cols": 40
+                }
+            },
             "mqtt_topic": {
                 "ui:widget": "textarea",
                 "ui:options": {

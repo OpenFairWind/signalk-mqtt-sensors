@@ -31,6 +31,11 @@
                 "title": "MQTT Sensor",
                 "description": "Set an MQTT topic to listen for changes on",
                 "properties": {
+                    "signalk_context": {
+                        "type": "string",
+                        "title": "Signal K context",
+                        "description": "The Signal K root path, (e.g. weatherstations.urn:mrn:signalk:fqdn:ws4.meteo.uniparthenope.it)"
+                    },
                     "mqtt_topic": {
                         "type": "string",
                         "title": "Topic",
