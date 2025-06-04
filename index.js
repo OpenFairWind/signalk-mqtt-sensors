@@ -5,7 +5,7 @@
 
 const app_name = "signalk-mqtt-sensors";
 const mqtt = require('mqtt');
-const jsonpath = require('jsonpath')
+const jsonpath = require('jsonpath') 
 const crypto = require('crypto');
 const { parse } = require('path');
 const { debug } = require('console');
