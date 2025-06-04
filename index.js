@@ -7,6 +7,8 @@ const app_name = "signalk-mqtt-sensors";
 const mqtt = require('mqtt');
 const jsonpath = require('jsonpath')
 const crypto = require('crypto');
+const { parse } = require('path');
+const { debug } = require('console');
 
 console.log(`loading ${app_name}`);
 
@@ -19,8 +21,9 @@ const SensorType = Object.freeze({
     HUMIDITY: "humidity",
     BATTERY: "battery",
     PRESSURE: "pressure",
-    WIND_DIR: "wind_dir",
     WIND_SPEED: "wind_speed",
+    WIND_DIR: "wind_dir",
+    RAIN: "rain",
     OTHER: "other"
 });
 
@@ -44,7 +47,7 @@ module.exports = function(app) {
      */
     plugin.start = function(options) {
         console.log(`Starting ${app_name}`);
-        
+
         const fromTopics = loadFromTopics(options);
         const toTopics = loadToTopics(options);
 
@@ -245,6 +248,9 @@ module.exports = function(app) {
                 app.debug(`Received MQTT message: ${message.toString()} on topic: ${topic}`);
 
                 let deltas = processMqttMessage(topic, message.toString());
+
+                // app.debug("deltas : ", deltas);
+
                 let data = {
                     updates: [
                       {
@@ -252,6 +258,7 @@ module.exports = function(app) {
                       }
                     ]
                 };
+
 
                 // Get the configuration related to the topic
                 const config = getTopic(fromTopics, topic)
@@ -262,17 +269,16 @@ module.exports = function(app) {
                     // Show a message
                     app.debug("Couldn't find a registration for MQTT topic", topic);
                 } else {
-
+                    
                     // Check if signal_context is defined and not empty
-                    if (config.signlk_context !== undefined && config.signlk_context!=='') {
-
+                    if( config.signalk_context !== '') {
                         // Set the context
                         data.context = config.signalk_context;
                     }
-                }
+                }   
 
                 if (data) {
-                    app.debug("Updating app with deltas: ", data)
+                    app.debug("Updating app with deltas: ", JSON.stringify(data, null, 2));
                     app.handleMessage(plugin.id, data);
                 }
             });
@@ -339,8 +345,11 @@ module.exports = function(app) {
                         return;
                     }
                 }
+
                 const delta = prepareDelta(sensor, parsedValue);
-                deltas.push(delta);
+                if (delta !== null) { 
+                    deltas.push(delta);
+                }
             });
 
             app.debug("Found deltas: ", deltas);
@@ -356,11 +365,17 @@ module.exports = function(app) {
         function prepareDelta(sensor, parsedValue) {
             // Do any conversions necessary between the input value defined by the sensor
             // parameters and the expected output value for that data type in Signal K.
-
             const type = sensor.sensor;
             const unit = sensor.unit;
             const signalk_path = sensor.destination;
             let value = null;
+
+            app.debug(`not_valid : ${sensor.not_valid} -- parsedValue : ${Number(parsedValue)}`);
+
+            if(Number(parsedValue) === Number(sensor.not_valid)){
+                return null;
+            }
+
             app.debug(`Preparing delta for ${type} with unit ${unit} to path ${signalk_path}`);
             switch(type) {
                 case SensorType.TEMPERATURE:
@@ -372,6 +387,9 @@ module.exports = function(app) {
                     } else if (unit === "C") {
                         // Convert from C to K
                         value = Number(parsedValue) + 273.15;
+                        // Convert from F to C 
+                        // value = (Number(parsedValue) - 32) * 5 / 9;
+                        // app.debug(`Converting temperature from F to C: ${value}`)
                         value = parseFloat(value.toFixed(2)); // Rounds to 2 decimal points
                         app.debug(`Converting temperature from C to K: ${value}`);                        
                     }
@@ -404,10 +422,41 @@ module.exports = function(app) {
                             break;
                     }
                     break;
+                
+                
+                case SensorType.WIND_SPEED:
+                    switch(unit) {
+                        case "km/h":
+                            // Convert from km/h to m/s
+                            value = Number(parsedValue) / 3.6
+                            app.debug(`Converting wind_speed from km/h to m/s : ${value}`);
+                            break;
+                    }
+                    break;
+                
+                case SensorType.WIND_DIR:
+                    switch(unit) {
+                        case "degrees":
+                            value = Number(parsedValue) * (Math.PI/180);
+                            app.debug(`Converting wind_direction from degrees to rads : ${value}`);
+                            break;
+                    }
+                    break;
+                
+
+                case SensorType.HUMIDITY:
+                    switch(unit) {
+                        case "percent":
+                            value = Number(parsedValue) / 100;
+                            app.debug(`Converting humidity from percent to ratio : ${value}`);
+                    }
+                    break;
+
                 default:
                     app.debug(`No data type conversation for ${type}`);
                     value = parsedValue;
             }
+
             return {
                 path: signalk_path,
                 value: value
@@ -446,6 +495,7 @@ module.exports = function(app) {
         function getSIUnit(sensorType) {
             switch (sensorType) {
                 case SensorType.TEMPERATURE:
+                    //return "C" // Celsius
                     return "K"; // Kelvin
                 case SensorType.HUMIDITY:
                     return "%"; // Percentage
@@ -455,7 +505,12 @@ module.exports = function(app) {
                     return "Pa"; // Pascal
                 case SensorType.WATER_LEAK:
                     return "boolean"; // Boolean for presence/absence
-                case SensorType.OTHER:
+                case SensorType.RAIN:
+                    return "mm/h"
+                case SensorType.WIND_DIR:
+                    return "rads"
+                case SensorType.WIND_SPEED:
+                    return "km/h"
                 default:
                     return null; // Or a sensible default like an empty string
             }
@@ -476,6 +531,7 @@ module.exports = function(app) {
                     app.debug('Discovering data for sensor', sensor);
                     const path = sensor.destination;
                     var unit = getSIUnit(sensor.sensor);
+                    
                     if (unit) {
                         meta.push({
                             path: path,
@@ -486,6 +542,7 @@ module.exports = function(app) {
                 })
             })
 
+            app.debug(`meta : ${JSON.stringify(meta, null, 2)}`);
             if (meta.length > 0) {
                 app.debug('Publishing meta data types', meta)
                 app.handleMessage(plugin.id, {

@@ -49,6 +49,12 @@
                             "type": "object",
                             "title": "Sensor",
                             "properties": {
+                                "not_valid": {
+                                    "type": "number",
+                                    "title": "Invalid measurement",
+                                    "description": "Value considered as invalid measurement for sensor.",
+                                    "default": 255
+                                },
                                 "json_path": {
                                     "type": "string",
                                     "title": "JSON Path",
@@ -71,6 +77,9 @@
                                         "battery",
                                         "water_leak",
                                         "pressure",
+                                        "wind_dir",
+                                        "wind_speed",
+                                        "rain",
                                         "other"
                                     ],
                                     "default": "temperature"
@@ -90,7 +99,10 @@
                                         "Pa",
                                         "hPa",
                                         "mmHg",
-                                        "literal"
+                                        "literal",
+                                        "km/h",
+                                        "degrees",
+                                        "mm/h"
                                     ],
                                     "default": "C"
                                 }

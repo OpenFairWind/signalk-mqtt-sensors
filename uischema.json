@@ -31,6 +31,9 @@
                     "collapsed": true
                 },
                 "items": {
+                    "not_valid": {
+                        "ui:widget": "updown"
+                    },
                     "json_path": {
                         "ui:widget": "textarea",
                         "ui:options": {
